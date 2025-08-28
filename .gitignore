@@ -1,7 +1,17 @@
-# Compiled class file
+# SwiftEats Spring Boot Project - .gitignore
+
+# ====================================
+# Java & Maven
+# ====================================
+target/
+!.mvn/wrapper/maven-wrapper.jar
+!**/src/main/**/target/
+!**/src/test/**/target/
+
+# Compiled class files
 *.class
 
-# Log file
+# Log files
 *.log
 
 # BlueJ files
@@ -10,7 +20,7 @@
 # Mobile Tools for Java (J2ME)
 .mtj.tmp/
 
-# Package Files #
+# Package Files
 *.jar
 *.war
 *.nar
@@ -19,6 +29,353 @@
 *.tar.gz
 *.rar
 
-# virtual machine crash logs, see http://www.java.com/en/download/help/error_hotspot.xml
+# Virtual machine crash logs
 hs_err_pid*
 replay_pid*
+
+# ====================================
+# Spring Boot
+# ====================================
+# Spring Boot DevTools restart marker
+.reloadtrigger
+
+# Spring Boot application logs
+spring.log
+
+# Spring Boot Actuator info
+application-*.properties
+application-*.yml
+!application.yml
+!application.properties
+
+# ====================================
+# IDE Files
+# ====================================
+
+# IntelliJ IDEA
+.idea/
+*.iws
+*.iml
+*.ipr
+out/
+!**/src/main/**/out/
+!**/src/test/**/out/
+
+# Eclipse
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
+bin/
+!**/src/main/**/bin/
+!**/src/test/**/bin/
+
+# NetBeans
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+
+# VS Code
+.vscode/
+.history/
+
+# ====================================
+# Operating System Files
+# ====================================
+
+# macOS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msm
+*.msp
+*.lnk
+
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+# ====================================
+# Database Files
+# ====================================
+# H2 Database files
+*.db
+*.trace.db
+*.lock.db
+*.mv.db
+
+# PostgreSQL
+*.sql
+*.backup
+
+# ====================================
+# Docker & Containerization
+# ====================================
+# Docker override files
+docker-compose.override.yml
+docker-compose.override.yaml
+
+# Docker volumes
+volumes/
+data/
+
+# Kubernetes
+*.kubeconfig
+
+# ====================================
+# Testing & Coverage
+# ====================================
+# JaCoCo Coverage Reports
+**/target/site/jacoco/
+jacoco.exec
+*.exec
+
+# Surefire Reports
+**/target/surefire-reports/
+**/target/failsafe-reports/
+
+# Test output
+test-output/
+coverage-summary.txt
+
+# ====================================
+# Build Tools & Dependencies
+# ====================================
+# Maven
+.mvn/timing.properties
+.mvn/wrapper/maven-wrapper.properties
+
+# Gradle
+.gradle
+**/build/
+!src/**/build/
+gradle-app.setting
+!gradle-wrapper.jar
+!gradle-wrapper.properties
+
+# SBT
+.sbt
+project/target/
+target/
+lib_managed/
+src_managed/
+project/boot/
+project/plugins/project/
+
+# ====================================
+# Application Specific
+# ====================================
+# Application logs
+logs/
+*.log.*
+application.log*
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.temp
+
+# Configuration files with sensitive data
+application-local.yml
+application-dev.yml
+application-prod.yml
+application-secret.yml
+*.env
+.env.*
+
+# Upload directories
+uploads/
+files/
+
+# Cache directories
+cache/
+.cache/
+
+# ====================================
+# Monitoring & Metrics
+# ====================================
+# Prometheus data
+prometheus_data/
+
+# Grafana data
+grafana_data/
+
+# APM data
+newrelic.jar
+elastic-apm-agent.jar
+
+# ====================================
+# Documentation Build Files
+# ====================================
+# Generated documentation
+/docs/build/
+/docs/_build/
+site/
+
+# API documentation
+api-docs/
+swagger-ui/
+
+# ====================================
+# Security & Sensitive Files
+# ====================================
+# SSL Certificates
+*.pem
+*.key
+*.crt
+*.p12
+*.jks
+*.keystore
+*.truststore
+
+# API Keys and secrets
+secrets/
+*.secret
+api-keys.txt
+
+# JWT keys
+jwt-*.key
+
+# ====================================
+# Backup Files
+# ====================================
+*.bak
+*.backup
+*.old
+*.orig
+*.swp
+*.swo
+*~
+
+# ====================================
+# Package Managers
+# ====================================
+# Node modules (if using any frontend tools)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+yarn.lock
+
+# ====================================
+# Cloud & Deployment
+# ====================================
+# AWS
+.aws/
+
+# Heroku
+.heroku/
+
+# Google Cloud
+gcloud/
+
+# Azure
+.azure/
+
+# ====================================
+# Performance & Profiling
+# ====================================
+# JProfiler
+*.jprofiler
+
+# YourKit
+*.snapshot
+
+# Flight Recorder
+*.jfr
+
+# Heap dumps
+*.hprof
+*.heap
+
+# ====================================
+# Miscellaneous
+# ====================================
+# Editor backup files
+*~
+.#*
+\#*\#
+.*.swp
+.*.swo
+
+# CTags
+tags
+TAGS
+
+# Vim
+*.swp
+*.swo
+*~
+.netrwhist
+
+# Emacs
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+auto-save-list
+tramp
+.\#*
+
+# ====================================
+# Project Specific Exclusions
+# ====================================
+# SwiftEats specific files
+driver-simulation-data/
+order-test-data/
+performance-test-results/
+
+# Demo and video files
+*.mp4
+*.mov
+*.avi
+demo-recordings/
+
+# Load testing results
+load-test-results/
+jmeter-results/
+
+# Custom scripts output
+coverage-report-*.html
+performance-report-*.txt
+
+# ====================================
+# Keep Important Files
+# (Files that should NOT be ignored)
+# ====================================
+# Keep these files even if they match patterns above
+!.mvn/wrapper/maven-wrapper.jar
+!gradle/wrapper/gradle-wrapper.jar
+!gradle/wrapper/gradle-wrapper.properties
+!**/src/main/resources/static/**
+!**/src/main/resources/templates/**
+!**/src/main/resources/application.yml
+!**/src/main/resources/application.properties
+!docker-compose.yml
+!Dockerfile
+!README.md
+!LICENSE
+!.gitignore

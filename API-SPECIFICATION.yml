@@ -1,0 +1,977 @@
+openapi: 3.0.3
+info:
+  title: SwiftEats Food Delivery Platform API
+  description: |
+    SwiftEats is a high-performance, scalable food delivery platform backend API.
+    
+    ## Key Features
+    - **High-Performance Order Processing**: 500 orders/minute capacity
+    - **Sub-200ms Menu Browsing**: Redis-cached restaurant and menu data
+    - **Real-Time Driver Tracking**: GPS location updates for 10,000+ drivers
+    - **Intelligent Driver Assignment**: Automated order-to-driver matching
+    - **Live Order Tracking**: WebSocket-based real-time updates
+    
+    ## Performance Targets
+    - Order Processing: 500 orders/minute
+    - Menu Response Time: P99 < 200ms
+    - Driver Location Updates: 2,000 events/second
+    - Concurrent Drivers: 10,000 drivers
+    
+    ## Authentication
+    Currently, the API operates without authentication for development/testing purposes.
+    Production deployment should implement JWT-based authentication.
+    
+  version: 1.0.0
+  contact:
+    name: SwiftEats Development Team
+    email: dev@swifteats.com
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:8080/api
+    description: Local development server
+  - url: https://api.swifteats.com
+    description: Production server
+
+tags:
+  - name: restaurants
+    description: Restaurant and menu management operations
+  - name: orders
+    description: Order processing and management operations
+  - name: drivers
+    description: Driver management and real-time location tracking
+  - name: health
+    description: System health and monitoring endpoints
+
+paths:
+  # Restaurant Management APIs
+  /restaurants:
+    get:
+      tags: [restaurants]
+      summary: Get all active restaurants
+      description: Retrieve list of all active restaurants with caching for performance
+      operationId: getAllActiveRestaurants
+      responses:
+        '200':
+          description: List of active restaurants
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RestaurantResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /restaurants/nearby:
+    get:
+      tags: [restaurants]
+      summary: Get nearby restaurants
+      description: Find restaurants within specified radius of coordinates
+      operationId: getNearbyRestaurants
+      parameters:
+        - name: latitude
+          in: query
+          required: true
+          schema:
+            type: number
+            format: double
+            example: 19.0760
+          description: Latitude coordinate
+        - name: longitude
+          in: query
+          required: true
+          schema:
+            type: number
+            format: double
+            example: 72.8777
+          description: Longitude coordinate
+        - name: radius
+          in: query
+          required: false
+          schema:
+            type: number
+            format: double
+            default: 5.0
+            example: 5.0
+          description: Search radius in kilometers
+      responses:
+        '200':
+          description: List of nearby restaurants
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RestaurantResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /restaurants/{restaurantId}:
+    get:
+      tags: [restaurants]
+      summary: Get restaurant by ID
+      description: Retrieve restaurant details by ID with caching
+      operationId: getRestaurantById
+      parameters:
+        - $ref: '#/components/parameters/RestaurantId'
+      responses:
+        '200':
+          description: Restaurant details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestaurantResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /restaurants/{restaurantId}/menu:
+    get:
+      tags: [restaurants]
+      summary: Get restaurant menu
+      description: Retrieve complete menu for a restaurant with heavy caching
+      operationId: getRestaurantMenu
+      parameters:
+        - $ref: '#/components/parameters/RestaurantId'
+      responses:
+        '200':
+          description: Restaurant menu items
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MenuItemResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /restaurants/{restaurantId}/menu/category/{category}:
+    get:
+      tags: [restaurants]
+      summary: Get menu by category
+      description: Retrieve menu items for a specific category
+      operationId: getMenuByCategory
+      parameters:
+        - $ref: '#/components/parameters/RestaurantId'
+        - name: category
+          in: path
+          required: true
+          schema:
+            type: string
+            example: "Main Course"
+          description: Menu category
+      responses:
+        '200':
+          description: Menu items in category
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MenuItemResponse'
+
+  /restaurants/search:
+    get:
+      tags: [restaurants]
+      summary: Search restaurants
+      description: Search restaurants by name or cuisine type
+      operationId: searchRestaurants
+      parameters:
+        - name: query
+          in: query
+          required: true
+          schema:
+            type: string
+            example: "pizza"
+          description: Search term
+      responses:
+        '200':
+          description: Matching restaurants
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RestaurantResponse'
+
+  # Order Management APIs
+  /orders:
+    post:
+      tags: [orders]
+      summary: Create new order
+      description: Create a new food order with items and delivery details
+      operationId: createOrder
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOrderRequest'
+      responses:
+        '201':
+          description: Order created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+
+  /orders/{orderId}:
+    get:
+      tags: [orders]
+      summary: Get order by ID
+      description: Retrieve order details by order ID
+      operationId: getOrderById
+      parameters:
+        - $ref: '#/components/parameters/OrderId'
+      responses:
+        '200':
+          description: Order details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /orders/{orderId}/status:
+    put:
+      tags: [orders]
+      summary: Update order status
+      description: Update the status of an existing order
+      operationId: updateOrderStatus
+      parameters:
+        - $ref: '#/components/parameters/OrderId'
+        - name: status
+          in: query
+          required: true
+          schema:
+            $ref: '#/components/schemas/OrderStatus'
+          description: New order status
+      responses:
+        '200':
+          description: Order status updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /orders/customer/{customerId}:
+    get:
+      tags: [orders]
+      summary: Get customer orders
+      description: Retrieve paginated list of orders for a customer
+      operationId: getCustomerOrders
+      parameters:
+        - name: customerId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: Customer orders
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagedOrderResponse'
+
+  # Driver Management APIs
+  /drivers/location:
+    post:
+      tags: [drivers]
+      summary: Update driver location
+      description: Update driver's GPS location for real-time tracking (high-frequency endpoint)
+      operationId: updateDriverLocation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DriverLocationUpdate'
+      responses:
+        '200':
+          description: Location updated successfully
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /drivers/location/batch:
+    post:
+      tags: [drivers]
+      summary: Batch update driver locations
+      description: Update multiple driver locations in a single request for efficiency
+      operationId: updateDriverLocationsBatch
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/DriverLocationUpdate'
+      responses:
+        '200':
+          description: Locations updated successfully
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /drivers/{driverId}/location:
+    get:
+      tags: [drivers]
+      summary: Get driver current location
+      description: Retrieve driver's most recent location
+      operationId: getDriverCurrentLocation
+      parameters:
+        - $ref: '#/components/parameters/DriverId'
+      responses:
+        '200':
+          description: Driver current location
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DriverLocation'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /drivers/nearby:
+    get:
+      tags: [drivers]
+      summary: Get nearby available drivers
+      description: Find available drivers within specified radius for order assignment
+      operationId: getNearbyDrivers
+      parameters:
+        - name: latitude
+          in: query
+          required: true
+          schema:
+            type: number
+            format: double
+        - name: longitude
+          in: query
+          required: true
+          schema:
+            type: number
+            format: double
+        - name: radius
+          in: query
+          required: false
+          schema:
+            type: number
+            format: double
+            default: 5.0
+      responses:
+        '200':
+          description: List of nearby available drivers
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Driver'
+
+  /drivers/{driverId}/status:
+    put:
+      tags: [drivers]
+      summary: Update driver status
+      description: Update driver availability status
+      operationId: updateDriverStatus
+      parameters:
+        - $ref: '#/components/parameters/DriverId'
+        - name: status
+          in: query
+          required: true
+          schema:
+            $ref: '#/components/schemas/DriverStatus'
+      responses:
+        '200':
+          description: Driver status updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Driver'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  # Health and Monitoring
+  /actuator/health:
+    get:
+      tags: [health]
+      summary: Health check
+      description: Application health status
+      operationId: getHealth
+      responses:
+        '200':
+          description: Application is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+components:
+  parameters:
+    RestaurantId:
+      name: restaurantId
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+        example: 1
+      description: Restaurant ID
+
+    OrderId:
+      name: orderId
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+        example: 1
+      description: Order ID
+
+    DriverId:
+      name: driverId
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+        example: 1
+      description: Driver ID
+
+    Page:
+      name: page
+      in: query
+      required: false
+      schema:
+        type: integer
+        default: 0
+        example: 0
+      description: Page number
+
+    Size:
+      name: size
+      in: query
+      required: false
+      schema:
+        type: integer
+        default: 10
+        example: 10
+      description: Page size
+
+  schemas:
+    RestaurantResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1
+        name:
+          type: string
+          example: "Maharaja Restaurant"
+        address:
+          type: string
+          example: "Mumbai Central, Mumbai"
+        latitude:
+          type: number
+          format: double
+          example: 19.0728
+        longitude:
+          type: number
+          format: double
+          example: 72.8826
+        phone:
+          type: string
+          example: "+91-9876543210"
+        status:
+          type: string
+          enum: [ACTIVE, INACTIVE, BUSY, CLOSED]
+          example: "ACTIVE"
+        cuisineType:
+          type: string
+          example: "Indian"
+        averageDeliveryTime:
+          type: integer
+          example: 30
+          description: Average delivery time in minutes
+        minimumOrderAmount:
+          type: number
+          format: double
+          example: 150.0
+        deliveryFee:
+          type: number
+          format: double
+          example: 50.0
+        rating:
+          type: number
+          format: double
+          example: 4.5
+        totalReviews:
+          type: integer
+          example: 250
+
+    MenuItemResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1
+        name:
+          type: string
+          example: "Butter Chicken"
+        description:
+          type: string
+          example: "Creamy tomato curry with tender chicken"
+        price:
+          type: number
+          format: double
+          example: 280.0
+        category:
+          type: string
+          example: "Main Course"
+        imageUrl:
+          type: string
+          example: "https://images.swifteats.com/items/1.jpg"
+        available:
+          type: boolean
+          example: true
+        preparationTime:
+          type: integer
+          example: 15
+          description: Preparation time in minutes
+        spiceLevel:
+          type: string
+          example: "Medium"
+        isVegetarian:
+          type: boolean
+          example: false
+        isVegan:
+          type: boolean
+          example: false
+        calories:
+          type: integer
+          example: 450
+
+    CreateOrderRequest:
+      type: object
+      required:
+        - customerId
+        - restaurantId
+        - orderItems
+        - deliveryAddress
+      properties:
+        customerId:
+          type: integer
+          format: int64
+          example: 1
+        restaurantId:
+          type: integer
+          format: int64
+          example: 1
+        orderItems:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrderItemRequest'
+        deliveryAddress:
+          type: string
+          example: "123 Test Street, Mumbai"
+        deliveryLatitude:
+          type: number
+          format: double
+          example: 19.0760
+        deliveryLongitude:
+          type: number
+          format: double
+          example: 72.8777
+        specialInstructions:
+          type: string
+          example: "Extra spicy"
+        paymentMethod:
+          type: string
+          enum: [CARD, UPI, WALLET, COD]
+          example: "CARD"
+
+    OrderItemRequest:
+      type: object
+      required:
+        - menuItemId
+        - quantity
+      properties:
+        menuItemId:
+          type: integer
+          format: int64
+          example: 1
+        quantity:
+          type: integer
+          minimum: 1
+          example: 2
+        specialInstructions:
+          type: string
+          example: "No onions"
+
+    OrderResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1
+        customerId:
+          type: integer
+          format: int64
+          example: 1
+        customerName:
+          type: string
+          example: "John Doe"
+        restaurantId:
+          type: integer
+          format: int64
+          example: 1
+        restaurantName:
+          type: string
+          example: "Maharaja Restaurant"
+        driverId:
+          type: integer
+          format: int64
+          example: 1
+        driverName:
+          type: string
+          example: "Raj Kumar"
+        status:
+          $ref: '#/components/schemas/OrderStatus'
+        totalAmount:
+          type: number
+          format: double
+          example: 348.0
+        deliveryFee:
+          type: number
+          format: double
+          example: 50.0
+        taxAmount:
+          type: number
+          format: double
+          example: 50.4
+        discountAmount:
+          type: number
+          format: double
+          example: 0.0
+        deliveryAddress:
+          type: string
+          example: "123 Test Street, Mumbai"
+        specialInstructions:
+          type: string
+          example: "Extra spicy"
+        estimatedDeliveryTime:
+          type: string
+          format: date-time
+          example: "2024-01-15T14:30:00Z"
+        actualDeliveryTime:
+          type: string
+          format: date-time
+          example: "2024-01-15T14:25:00Z"
+        paymentStatus:
+          $ref: '#/components/schemas/PaymentStatus'
+        paymentMethod:
+          type: string
+          example: "CARD"
+        createdAt:
+          type: string
+          format: date-time
+          example: "2024-01-15T13:00:00Z"
+        updatedAt:
+          type: string
+          format: date-time
+          example: "2024-01-15T14:25:00Z"
+        orderItems:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrderItemResponse'
+
+    OrderItemResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1
+        menuItemId:
+          type: integer
+          format: int64
+          example: 1
+        menuItemName:
+          type: string
+          example: "Butter Chicken"
+        quantity:
+          type: integer
+          example: 2
+        unitPrice:
+          type: number
+          format: double
+          example: 280.0
+        totalPrice:
+          type: number
+          format: double
+          example: 560.0
+        specialInstructions:
+          type: string
+          example: "No onions"
+
+    DriverLocationUpdate:
+      type: object
+      required:
+        - driverId
+        - latitude
+        - longitude
+      properties:
+        driverId:
+          type: integer
+          format: int64
+          example: 1
+        latitude:
+          type: number
+          format: double
+          example: 19.0760
+        longitude:
+          type: number
+          format: double
+          example: 72.8777
+        accuracy:
+          type: number
+          format: double
+          example: 5.0
+          description: GPS accuracy in meters
+        speed:
+          type: number
+          format: double
+          example: 25.5
+          description: Speed in km/h
+        heading:
+          type: number
+          format: double
+          example: 180.0
+          description: Direction in degrees
+        timestamp:
+          type: string
+          format: date-time
+          example: "2024-01-15T13:30:00Z"
+
+    DriverLocation:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1
+        driverId:
+          type: integer
+          format: int64
+          example: 1
+        latitude:
+          type: number
+          format: double
+          example: 19.0760
+        longitude:
+          type: number
+          format: double
+          example: 72.8777
+        accuracy:
+          type: number
+          format: double
+          example: 5.0
+        speed:
+          type: number
+          format: double
+          example: 25.5
+        heading:
+          type: number
+          format: double
+          example: 180.0
+        timestamp:
+          type: string
+          format: date-time
+          example: "2024-01-15T13:30:00Z"
+
+    Driver:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1
+        name:
+          type: string
+          example: "Raj Kumar"
+        email:
+          type: string
+          example: "raj.kumar@swifteats.com"
+        phone:
+          type: string
+          example: "+91-9876543210"
+        vehicleType:
+          type: string
+          example: "Motorcycle"
+        vehicleNumber:
+          type: string
+          example: "MH12AB1234"
+        status:
+          $ref: '#/components/schemas/DriverStatus'
+        rating:
+          type: number
+          format: double
+          example: 4.8
+        totalDeliveries:
+          type: integer
+          example: 150
+        currentLatitude:
+          type: number
+          format: double
+          example: 19.0760
+        currentLongitude:
+          type: number
+          format: double
+          example: 72.8777
+
+    PagedOrderResponse:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrderResponse'
+        pageable:
+          type: object
+          properties:
+            pageNumber:
+              type: integer
+              example: 0
+            pageSize:
+              type: integer
+              example: 10
+        totalElements:
+          type: integer
+          format: int64
+          example: 25
+        totalPages:
+          type: integer
+          example: 3
+        last:
+          type: boolean
+          example: false
+        first:
+          type: boolean
+          example: true
+
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [UP, DOWN]
+          example: "UP"
+        components:
+          type: object
+          properties:
+            db:
+              type: object
+              properties:
+                status:
+                  type: string
+                  example: "UP"
+            redis:
+              type: object
+              properties:
+                status:
+                  type: string
+                  example: "UP"
+
+    OrderStatus:
+      type: string
+      enum:
+        - PLACED
+        - CONFIRMED
+        - PREPARING
+        - READY_FOR_PICKUP
+        - PICKED_UP
+        - OUT_FOR_DELIVERY
+        - DELIVERED
+        - CANCELLED
+      example: "PLACED"
+
+    PaymentStatus:
+      type: string
+      enum:
+        - PENDING
+        - PROCESSING
+        - COMPLETED
+        - FAILED
+        - REFUNDED
+      example: "COMPLETED"
+
+    DriverStatus:
+      type: string
+      enum:
+        - ONLINE
+        - OFFLINE
+        - BUSY
+        - ON_DELIVERY
+      example: "ONLINE"
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Bad Request"
+        message:
+          type: string
+          example: "Invalid request parameters"
+        timestamp:
+          type: string
+          format: date-time
+          example: "2024-01-15T13:30:00Z"
+        path:
+          type: string
+          example: "/api/orders"
+
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    InternalServerError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    RateLimitExceeded:
+      description: Rate limit exceeded
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
