@@ -1,3 +1,12 @@
+target/
+.idea/
+.project
+.classpath
+.settings/
+*.iml
+.DS_Store
+logs/
+
 # SwiftEats Spring Boot Project - .gitignore
 
 # ====================================

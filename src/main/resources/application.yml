@@ -1,209 +1,41 @@
-server:
-  port: 8080
-  servlet:
-    context-path: /api
-
 spring:
   application:
-    name: swifteats-backend
-  
-  # Database Configuration
+    name: swifteats
   datasource:
-    url: jdbc:postgresql://localhost:5433/swifteats
-    driver-class-name: org.postgresql.Driver
-    username: swifteats_user
-    password: swifteats_password
-  
+    url: jdbc:h2:mem:swifteats;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    username: sa
+    password: ""
+    driver-class-name: org.h2.Driver
   jpa:
     hibernate:
-      ddl-auto: update
-    show-sql: false
+      ddl-auto: validate
+    open-in-view: false
     properties:
       hibernate:
         format_sql: true
-        dialect: org.hibernate.dialect.PostgreSQLDialect
-  
-  # Redis Configuration
-  data:
-    redis:
-      host: localhost
-      port: 6379
-      timeout: 2000ms
-      lettuce:
-        pool:
-          max-active: 10
-          max-idle: 5
-          min-idle: 0
-  
-  # Kafka Configuration
-  kafka:
-    bootstrap-servers: localhost:9092
-    consumer:
-      group-id: swifteats-consumer-group
-      auto-offset-reset: earliest
-      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-    producer:
-      key-serializer: org.apache.kafka.common.serialization.StringSerializer
-      value-serializer: org.apache.kafka.common.serialization.StringSerializer
-      acks: all
-      retries: 3
-  
-  # Cache Configuration
-  cache:
-    type: redis
-    redis:
-      time-to-live: 300000 # 5 minutes
+        jdbc.time_zone: UTC
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
 
-# Management and Monitoring
 management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics,prometheus
-  endpoint:
-    health:
-      show-details: always
-  metrics:
-    export:
-      prometheus:
-        enabled: true
-
-# API Documentation
-springdoc:
-  api-docs:
-    path: /api-docs
-  swagger-ui:
-    path: /swagger-ui.html
-    try-it-out-enabled: true
-
-# Application Specific Configuration
-swifteats:
-  # Order processing configuration
-  order:
-    max-processing-rate: 500 # orders per minute
-    payment-mock-delay: 100 # milliseconds
-  
-  # Performance targets
-  performance:
-    menu-response-target: 200 # P99 response time in milliseconds
-  
-  # Driver tracking configuration
-  driver:
-    max-concurrent: 10000
-    location-update-interval: 5000 # milliseconds
-    retention-period: 3600000 # 1 hour in milliseconds
-  
-  # Simulator configuration for testing
-  simulator:
-    driver-count: 50
-    events-per-second: 10
-    enabled: true
-
-# Logging Configuration
-logging:
-  level:
-    com.swifteats: INFO
-    org.springframework.kafka: WARN
-    org.springframework.cache: DEBUG
-  pattern:
-    console: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"
-    file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
-
----
-# Development Profile
-spring:
-  config:
-    activate:
-      on-profile: dev
-  datasource:
-    url: jdbc:postgresql://localhost:5433/swifteats
-    driver-class-name: org.postgresql.Driver
-    username: swifteats_user
-    password: swifteats_password
-  jpa:
-    hibernate:
-      ddl-auto: update
-    show-sql: true
-    properties:
-      hibernate:
-        format_sql: true
-        dialect: org.hibernate.dialect.PostgreSQLDialect
-  data:
-    redis:
-      host: localhost
-      port: 6379
-  kafka:
-    bootstrap-servers: localhost:9092
+        include: health,info
+  health:
+    rabbit:
+      enabled: false
 
 logging:
   level:
-    com.swifteats: DEBUG
-    org.springframework.kafka: INFO
-    org.springframework.cache: DEBUG
+    org.hibernate.SQL: warn
+    org.springframework: info
 
----
-# Test Profile  
-spring:
-  config:
-    activate:
-      on-profile: test
-  datasource:
-    url: jdbc:postgresql://localhost:5433/swifteats_test
-    driver-class-name: org.postgresql.Driver
-    username: swifteats_test_user
-    password: swifteats_test_password
-  jpa:
-    hibernate:
-      ddl-auto: create-drop
-    show-sql: true
-    properties:
-      hibernate:
-        format_sql: true
-        dialect: org.hibernate.dialect.PostgreSQLDialect
-  data:
-    redis:
-      host: localhost
-      port: 6380
-  kafka:
-    bootstrap-servers: localhost:9093
+security:
+  jwt:
+    # base64 secret for HS256; default is overridden in envs as needed
+    secret: ZmFrZV9kZWFkYmVlZjEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIz
+    ttlSeconds: 3600
 
-swifteats:
-  simulator:
-    enabled: false
 
-logging:
-  level:
-    com.swifteats: DEBUG
-
----
-# Production Profile
-spring:
-  config:
-    activate:
-      on-profile: prod
-  datasource:
-    url: jdbc:postgresql://postgres:5432/swifteats
-    driver-class-name: org.postgresql.Driver
-    username: ${DB_USERNAME:swifteats_user}
-    password: ${DB_PASSWORD:swifteats_password}
-  jpa:
-    hibernate:
-      ddl-auto: validate
-    show-sql: false
-    properties:
-      hibernate:
-        format_sql: false
-        dialect: org.hibernate.dialect.PostgreSQLDialect
-  data:
-    redis:
-      host: ${REDIS_HOST:redis}
-      port: ${REDIS_PORT:6379}
-  kafka:
-    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:kafka:9092}
-
-logging:
-  level:
-    com.swifteats: INFO
-    org.springframework.kafka: WARN
-    org.springframework.cache: WARN

@@ -1,433 +1,1014 @@
-# SwiftEats Architecture Documentation
+# SwiftEats Backend Architecture
 
-## Overview
+## Table of Contents
+1. [Problem Statement and Context](#problem-statement-and-context)
+2. [Architectural Pattern Selection](#architectural-pattern-selection)
+3. [System Architecture Overview](#system-architecture-overview)
+4. [Component Responsibilities](#component-responsibilities)
+5. [Data Flow Descriptions](#data-flow-descriptions)
+6. [Technology Stack Justification](#technology-stack-justification)
+7. [Performance Targets and Optimization](#performance-targets-and-optimization)
+8. [Resilience and Failure Handling](#resilience-and-failure-handling)
+9. [Local Validation and Testing](#local-validation-and-testing)
 
-SwiftEats is designed as a **Modular Monolith** with clear domain boundaries that can be easily extracted into microservices when needed. This architectural choice provides the benefits of simplified deployment and operations while maintaining high scalability and performance.
+---
 
-## Architectural Pattern: Modular Monolith
+## Problem Statement and Context
 
-### Why Modular Monolith?
+### Business Challenge
+SwiftEats is a food delivery startup launching in Maharashtra that requires a backend platform capable of:
+- Processing 500 orders per minute during peak hours
+- Delivering menu browsing experience with P99 response times under 200ms
+- Handling real-time GPS tracking from 10,000 concurrent drivers (2,000 events/second)
+- Maintaining 99.9% uptime while supporting rapid feature development
 
-1. **Simplified Operations**: Single deployment unit, easier monitoring and debugging
-2. **Performance**: In-process communication eliminates network latency
-3. **Consistency**: ACID transactions across modules
-4. **Future-Proof**: Clear module boundaries enable easy microservice extraction
-5. **Development Velocity**: Faster initial development and testing
+### Technical Constraints
+- **Local Validation**: System must demonstrate full functionality on local development machines
+- **Deployment**: Single docker-compose file for easy validation and deployment
+- **Resource Efficiency**: Optimal performance within reasonable hardware constraints
+- **Development Speed**: Support for rapid iteration and feature development
 
-### Migration Path to Microservices
+### Design Principles
+- **Avoid Over-Engineering**: Choose simplest solution that meets requirements
+- **Cost Efficiency**: Select proven, cost-effective technologies over premium alternatives
+- **Reliability First**: Prioritize system stability and data consistency
+- **Future-Ready**: Design module boundaries for potential future service extraction
 
-The modular design allows for selective extraction:
-- **Order Service**: Independent order processing microservice
-- **Location Service**: High-throughput GPS tracking service
-- **Restaurant Service**: Menu and restaurant data service
-- **Payment Service**: External payment processing integration
+---
 
-## System Architecture
+## Architectural Pattern Selection
 
-```mermaid
-graph TB
-    subgraph "Client Layer"
-        Web[Web Application]
-        Mobile[Mobile Apps]
-        Dashboard[Restaurant Dashboard]
-    end
+### Chosen Pattern: Modular Monolith
+
+**Rationale:**
+- **Startup Alignment**: Enables rapid development and deployment for product-market fit validation
+- **Performance**: In-process communication eliminates network latency between components
+- **Simplicity**: Single deployment unit reduces operational complexity
+- **Cost Effectiveness**: Minimal infrastructure requirements for target scale
+- **Local Development**: Single container setup with standard development hardware requirements
+
+**Trade-offs Accepted:**
+- Component scaling granularity limited to application level
+- Technology stack uniformity across all modules
+- Shared failure domain requiring robust error handling
+
+---
+
+## System Architecture Overview
+
+```
+                                SwiftEats Modular Monolith Architecture
     
-    subgraph "Load Balancer"
-        LB[Nginx Load Balancer]
-    end
+    ┌─────────────────────────────────────────────────────────────────────────────────────────┐
+    │                                   Load Balancer                                         │
+    │                                 (NGINX/HAProxy)                                         │
+    └────────────────────────────┬────────────────────────────────────────────────────────────┘
+                                │
+    ┌───────────────────────────▼─────────────────────────────────────────────────────────────┐
+    │                            SwiftEats Application                                        │
+    │  ┌─────────────────────────────────────────────────────────────────────────────────┐   │
+    │  │                           API Gateway Layer                                     │   │
+    │  │  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐  │   │
+    │  │  │   Order     │ │ Restaurant  │ │  Location   │ │    User     │ │   Driver    │  │   │
+    │  │  │  Endpoints  │ │  Endpoints  │ │  Endpoints  │ │  Endpoints  │ │  Endpoints  │  │   │
+    │  │  └─────────────┘ └─────────────┘ └─────────────┘ └─────────────┘ └─────────────┘  │   │
+    │  └─────────────────────────────────────────────────────────────────────────────────┘   │
+    │                                         │                                               │
+    │  ┌─────────────────────────────────────▼───────────────────────────────────────────┐   │
+    │  │                          Business Logic Layer                                   │   │
+    │  │                                                                                  │   │
+    │  │  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐  │   │
+    │  │  │   Order     │ │ Restaurant  │ │  Location   │ │    User     │ │  Notification│  │   │
+    │  │  │   Module    │ │   Module    │ │   Module    │ │   Module    │ │   Module    │  │   │
+    │  │  │             │ │             │ │             │ │             │ │             │  │   │
+    │  │  │ - Order     │ │ - Menu      │ │ - GPS       │ │ - Customer  │ │ - WebSocket │  │   │
+    │  │  │   Creation  │ │   Management│ │   Processing│ │   Mgmt      │ │   Manager   │  │   │
+    │  │  │ - Status    │ │ - Restaurant│ │ - Driver    │ │ - Driver    │ │ - Push      │  │   │
+    │  │  │   Tracking  │ │   Status    │ │   Tracking  │ │   Profiles  │ │   Notifications│ │   │
+    │  │  │ - Payment   │ │ - Availability│ │ - Real-time│ │ - Auth      │ │ - Email     │  │   │
+    │  │  │   Processing│ │   Updates   │ │   Updates   │ │ - Session   │ │   Alerts    │  │   │
+    │  │  └─────────────┘ └─────────────┘ └─────────────┘ └─────────────┘ └─────────────┘  │   │
+    │  └─────────────────────────────────────────────────────────────────────────────────┘   │
+    │                                         │                                               │
+    │  ┌─────────────────────────────────────▼───────────────────────────────────────────┐   │
+    │  │                       Data Access Layer                                         │   │
+    │  │                                                                                  │   │
+    │  │  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐  │   │
+    │  │  │   Order     │ │ Restaurant  │ │  Location   │ │    User     │ │   Shared    │  │   │
+    │  │  │ Repository  │ │ Repository  │ │ Repository  │ │ Repository  │ │ Repository  │  │   │
+    │  │  │             │ │             │ │             │ │             │ │             │  │   │
+    │  │  │ - CRUD Ops  │ │ - Menu Cache│ │ - Batch     │ │ - Profile   │ │ - Common    │  │   │
+    │  │  │ - Order     │ │ - Status    │ │   Inserts   │ │   Data      │ │   Queries   │  │   │
+    │  │  │   Queries   │ │   Updates   │ │ - Location  │ │ - Auth      │ │ - Transactions│ │   │
+    │  │  │ - Status    │ │ - Query     │ │   Queries   │ │   Tokens    │ │ - Migrations│  │   │
+    │  │  │   Updates   │ │   Optimization│ │ - History  │ │ - Session   │ │ - Utilities │  │   │
+    │  │  └─────────────┘ └─────────────┘ └─────────────┘ └─────────────┘ └─────────────┘  │   │
+    │  └─────────────────────────────────────────────────────────────────────────────────┘   │
+    └─────────────────────────────────────────────────────────────────────────────────────────┘
+                                         │
+    ┌─────────────────────────────────────▼───────────────────────────────────────────────────┐
+    │                              Infrastructure Layer                                       │
+    │                                                                                          │
+    │  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐    ┌──────────────┐          │
+    │  │              │    │              │    │              │    │              │          │
+    │  │ PostgreSQL   │    │    Redis     │    │  RabbitMQ    │    │   WebSocket  │          │
+    │  │              │    │              │    │              │    │   Manager    │          │
+    │  │ - Primary DB │    │ - Menu Cache │    │ - GPS Events │    │              │          │
+    │  │ - Orders     │    │ - Session    │    │ - Async Tasks│    │ - Driver     │          │
+    │  │ - Restaurants│    │   Storage    │    │ - Email Queue│    │   Locations  │          │
+    │  │ - Users      │    │ - Rate       │    │ - Notification│    │ - Order      │          │
+    │  │ - Drivers    │    │   Limiting   │    │   Queue      │    │   Updates    │          │
+    │  │ - Locations  │    │ - App Cache  │    │              │    │              │          │
+    │  │              │    │              │    │              │    │              │          │
+    │  └──────────────┘    └──────────────┘    └──────────────┘    └──────────────┘          │
+    └─────────────────────────────────────────────────────────────────────────────────────────┘
     
-    subgraph "Application Layer"
-        App[SwiftEats Spring Boot Application]
-        
-        subgraph "Core Modules"
-            OM[Order Management]
-            RM[Restaurant Management]
-            DM[Driver Management]
-            LT[Location Tracking]
-            PM[Payment Processing]
-        end
-    end
-    
-    subgraph "Data Layer"
-        PG[(PostgreSQL)]
-        Redis[(Redis Cache)]
-        Kafka[Apache Kafka]
-    end
-    
-    subgraph "External Services"
-        PayGW[Payment Gateway]
-        Maps[Maps Service]
-        SMS[SMS Service]
-    end
-    
-    subgraph "Monitoring"
-        Prom[Prometheus]
-        Graf[Grafana]
-        Logs[Centralized Logging]
-    end
-    
-    Web --> LB
-    Mobile --> LB
-    Dashboard --> LB
-    
-    LB --> App
-    App --> OM
-    App --> RM
-    App --> DM
-    App --> LT
-    App --> PM
-    
-    App --> PG
-    App --> Redis
-    App --> Kafka
-    
-    PM --> PayGW
-    LT --> Maps
-    App --> SMS
-    
-    App --> Prom
-    Prom --> Graf
-    App --> Logs
+    External Interfaces:
+    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐
+    │   Customer  │    │ Restaurant  │    │   Driver    │    │   Admin     │
+    │     App     │    │   Portal    │    │     App     │    │   Portal    │
+    └─────────────┘    └─────────────┘    └─────────────┘    └─────────────┘
 ```
 
-## Component Architecture
+---
 
-### 1. Order Management Module
+## Component Responsibilities
+
+### 1. API Gateway Layer
+**Purpose**: Request routing, authentication, rate limiting, and response formatting
+
+**Responsibilities:**
+- Route incoming requests to appropriate business modules
+- Handle authentication and authorization (JWT tokens)
+- Implement rate limiting to prevent abuse
+- Request/response validation and transformation
+- API versioning and documentation serving
+- CORS handling for web clients
+
+### 2. Order Module
+**Purpose**: Complete order lifecycle management
 
 **Responsibilities:**
 - Order creation and validation
-- Order status tracking
-- Payment integration
-- Driver assignment coordination
+- Payment processing integration (mocked)
+- Order status tracking and updates
+- Order assignment to drivers
+- Order history and analytics
+- Refund and cancellation handling
 
-**Key Components:**
-- `OrderController`: REST endpoints for order operations
-- `OrderService`: Business logic and orchestration
-- `PaymentService`: Payment processing (mocked)
-- `DriverAssignmentService`: Intelligent driver matching
+**Key Operations:**
+- `createOrder()`: Validate and create new orders
+- `updateOrderStatus()`: Track order progression
+- `assignDriver()`: Match orders with available drivers
+- `processPayment()`: Handle payment workflow
+- `getOrderHistory()`: Retrieve customer/restaurant order history
 
-**Performance Optimizations:**
-- Async payment processing to improve throughput
-- Database indexing on order status and timestamps
-- Kafka events for order state changes
-- Rate limiting to prevent system overload
-
-### 2. Restaurant Management Module
+### 3. Restaurant Module
+**Purpose**: Restaurant and menu management with high-performance browsing
 
 **Responsibilities:**
-- Restaurant and menu data management
-- High-performance menu browsing
-- Location-based restaurant search
-- Menu item availability management
-
-**Key Components:**
-- `RestaurantController`: Restaurant and menu APIs
-- `RestaurantService`: Cached business logic
-- `MenuItemRepository`: Optimized menu queries
+- Restaurant profile management
+- Menu item management (CRUD operations)
+- Restaurant availability status updates
+- Menu caching and cache invalidation
+- Search and filtering capabilities
+- Restaurant analytics and reporting
 
 **Performance Optimizations:**
-- **Redis Caching**: Menu data cached with 5-minute TTL
-- **Database Indexing**: Location-based spatial indexing
-- **Lazy Loading**: Menu items loaded on demand
-- **Query Optimization**: Specialized queries for common use cases
+- Aggressive Redis caching for menu data
+- Database query optimization with indexes
+- Menu data denormalization for fast reads
+- Background cache warming processes
 
-### 3. Driver Management & Location Tracking Module
+### 4. Location Module
+**Purpose**: High-throughput GPS data processing and real-time tracking
 
 **Responsibilities:**
-- Real-time GPS location processing
-- Driver status management
-- Location history tracking
-- Live location streaming
+- GPS coordinate validation and processing
+- Driver location storage and retrieval
+- Real-time location broadcasting to customers
+- Location history maintenance for analytics
+- Geospatial queries for driver matching
+- Location-based ETAs and routing
 
-**Key Components:**
-- `DriverController`: Driver management APIs
-- `DriverService`: Location processing and status management
-- `DriverLocationRepository`: High-frequency location storage
-- WebSocket handlers for real-time updates
+**Performance Strategy:**
+- RabbitMQ for GPS event buffering
+- Batch processing for database writes
+- In-memory location cache for real-time queries
+- Periodic cleanup of historical location data
 
-**Performance Optimizations:**
-- **Async Processing**: Location updates processed asynchronously
-- **Kafka Streaming**: Real-time location event streaming
-- **Database Partitioning**: Location data partitioned by time
-- **Data Retention**: Automatic cleanup of old location data
-- **Connection Pooling**: Optimized for high-frequency updates
+### 5. User Module
+**Purpose**: Customer and driver profile management
 
-## Data Architecture
+**Responsibilities:**
+- User registration and profile management
+- Authentication and session management
+- Role-based access control
+- Driver verification and onboarding
+- Customer preferences and settings
+- User analytics and behavior tracking
 
-### Database Design
+### 6. Notification Module
+**Purpose**: Real-time communication with users
 
-#### Primary Database: PostgreSQL
+**Responsibilities:**
+- WebSocket connection management
+- Push notification delivery
+- Email notification queuing
+- SMS alert processing (if required)
+- Notification template management
+- Delivery confirmation tracking
 
-**Tables:**
-- `restaurants`: Restaurant master data
-- `menu_items`: Menu items with pricing and availability
-- `customers`: Customer profiles and preferences
-- `drivers`: Driver profiles and current status
-- `orders`: Order transactions and status
-- `order_items`: Order line items
-- `driver_locations`: High-frequency GPS location data
+---
 
-**Indexing Strategy:**
-- **Spatial Indexes**: Location-based queries (restaurants, drivers)
-- **Composite Indexes**: Multi-column searches (restaurant_id + category)
-- **Time-based Indexes**: Order timestamps for analytics
-- **Status Indexes**: Order and driver status for filtering
+## Data Flow Descriptions
 
-#### Caching Strategy: Redis
+### 1. Order Processing Flow
+```
+Customer → API Gateway → Order Module → Payment Module → Restaurant Module → Driver Assignment
+    ↓           ↓             ↓              ↓               ↓                    ↓
+Database ← Notification ← Status Update ← Payment Confirm ← Inventory Check ← Driver Match
+```
 
-**Cache Patterns:**
-- **Menu Cache**: Restaurant menus (5-minute TTL)
-- **Restaurant Cache**: Restaurant data (10-minute TTL)
-- **Location Cache**: Recent driver locations (30-second TTL)
-- **Session Cache**: User sessions and preferences
+**Detailed Steps:**
+1. Customer submits order through API Gateway
+2. Order Module validates order details and inventory
+3. Payment Module processes mock payment
+4. Restaurant Module confirms order acceptance
+5. Driver matching algorithm assigns available driver
+6. Real-time notifications sent to all parties
+7. Order status tracking begins
 
-**Cache Invalidation:**
-- Time-based expiration for most data
-- Event-driven invalidation for critical updates
-- Cache warming for popular restaurants
+### 2. Menu Browsing Flow
+```
+Customer → API Gateway → Restaurant Module → Redis Cache → Database (if cache miss)
+                              ↓
+                         Cached Response (P99 < 200ms)
+```
 
-### Event Streaming: Apache Kafka
+**Cache Strategy:**
+- Menu data cached in Redis with 15-minute TTL
+- Cache warming during off-peak hours
+- Proactive cache invalidation on menu updates
+- Cache-aside pattern for cache misses
 
-**Topics:**
-- `order-events`: Order lifecycle events
-- `driver-locations`: Real-time GPS updates
-- `driver-assignments`: Driver-order matching events
-- `payment-events`: Payment processing events
+### 3. Real-time Location Tracking Flow
+```
+Driver App → API Gateway → Location Module → RabbitMQ → Batch Processor → Database
+                              ↓
+                         WebSocket Manager → Customer App (real-time updates)
+```
 
-**Consumer Groups:**
-- **Analytics Group**: Real-time metrics and reporting
-- **Notification Group**: Customer and driver notifications
-- **Location Group**: Live tracking and assignment
+**Processing Pipeline:**
+1. Driver sends GPS coordinates every 5 seconds
+2. Location Module validates and queues events in RabbitMQ
+3. Background workers batch process events to database
+4. WebSocket Manager broadcasts updates to tracking customers
+5. Location history maintained for analytics
 
-## Technology Justification
+---
 
-### Core Technologies
+## Technology Stack Justification
 
-#### 1. Spring Boot 3.2.8 + Java 21
+### Primary Technologies (Enterprise-ready, Simple Locally)
+
+#### **Java 17 + Spring Boot 3**
 **Rationale:**
-- **Performance**: Virtual threads for improved concurrency
-- **Ecosystem**: Comprehensive framework with excellent integrations
-- **Monitoring**: Built-in actuator endpoints and metrics
-- **Security**: Production-ready security features
-- **Testing**: Excellent testing framework support
+- Mature, production-proven platform with strong ecosystem and community support
+- Excellent performance characteristics with **Netty/Tomcat** and **HikariCP**
+- Rich first-class integrations: Spring Data JPA, Spring AMQP (RabbitMQ), Spring WebSocket, Spring Security, Spring Validation, Spring Actuator
+- Strong typing and tooling for enterprise-grade maintainability
+- Easy local validation with embedded servers and Dockerized dependencies
 
-#### 2. PostgreSQL
+**Spring Modules Used:**
+- Spring Web (REST APIs)
+- Spring Data JPA (PostgreSQL, PostGIS)
+- Spring AMQP (RabbitMQ integration)
+- Spring WebSocket (STOMP/SockJS for real-time updates)
+- Spring Security (JWT-based auth)
+- Spring Validation (Bean Validation/Hibernate Validator)
+- Spring Boot Actuator (health/metrics)
+
+**Production posture:**
+- Enforce security best practices (CORS, headers, CSRF where applicable)
+- Centralized config/secrets (Vault/SM); rolling updates via orchestration
+- Blue/green or canary deploys; readiness/liveness probes
+
+**Local simplicity:**
+- Single JVM process; properties via `.env`/application.properties
+- Actuator endpoints exposed locally; no external config system required
+
+#### **PostgreSQL Database**
 **Rationale:**
-- **ACID Compliance**: Critical for financial transactions
-- **Spatial Support**: Efficient location-based queries
-- **Performance**: Excellent query optimization and indexing
-- **Reliability**: Battle-tested in high-load environments
-- **JSON Support**: Flexible schema evolution
+- ACID compliance ensures order data consistency
+- Excellent performance for 500 orders/minute load
+- Strong geospatial support (PostGIS) for location queries
+- Robust backup and replication capabilities
+- Cost-effective with proven reliability
 
-#### 3. Redis
+**Alternative Considered:** MongoDB - Rejected due to eventual consistency concerns for financial transactions
+
+**Production posture:**
+- Managed Postgres (e.g., RDS/Aurora/Cloud SQL) with PITR, automated backups
+- High availability (multi-AZ), read replicas for browse traffic, partitioning where needed
+- Strict migration discipline with Flyway, connection limits via HikariCP
+
+**Local simplicity:**
+- Single dockerized Postgres with PostGIS enabled; seeded via Flyway on startup
+
+#### **Redis Cache**
 **Rationale:**
-- **Performance**: Sub-millisecond response times
-- **Data Structures**: Rich data types for complex caching
-- **Persistence**: Optional durability for critical cache data
-- **Clustering**: Horizontal scaling capabilities
-- **Memory Efficiency**: Optimized memory usage
+- Sub-millisecond response times for menu browsing
+- Built-in data structures perfect for caching patterns
+- Pub/Sub capabilities for real-time features
+- Session storage with automatic expiration
+- Memory-efficient for target dataset size
 
-#### 4. Apache Kafka
+**Alternative Considered:** Memcached - Rejected due to lack of advanced data structures
+
+**Production posture:**
+- HA Redis (Sentinel or managed) with persistence where appropriate; key TTL policies
+- Separate logical DBs for cache, sessions, and rate limiting; memory monitoring/alerts
+
+**Local simplicity:**
+- Single Redis container; default config; ephemeral data acceptable
+
+#### **RabbitMQ Message Queue**
 **Rationale:**
-- **Throughput**: Handles millions of events per second
-- **Durability**: Persistent message storage
-- **Scalability**: Horizontal partitioning
-- **Real-time**: Low-latency event processing
-- **Integration**: Excellent Spring integration
+- More than sufficient for 2,000 events/second throughput
+- Lower operational complexity compared to Kafka
+- Excellent reliability with message persistence
+- Dead letter queues for error handling
+- Significantly lower resource requirements
 
-#### 5. WebSockets (STOMP)
+**Alternative Considered:** Apache Kafka - Rejected as over-engineered for current scale (designed for 100K+ events/second)
+
+**Production posture:**
+- Clustered RabbitMQ with quorum queues, mirrored policies, DLX/DLQ monitoring
+- Publisher confirms and consumer acks; retry/backoff via dead-letter exchanges
+
+**Local simplicity:**
+- Single RabbitMQ container with management UI; basic durable queue config
+
+#### **Spring WebSocket (STOMP/SockJS)**
 **Rationale:**
-- **Real-time**: Instant location updates
-- **Efficiency**: Persistent connections reduce overhead
-- **Standardization**: STOMP protocol for messaging
-- **Scaling**: SockJS fallback for compatibility
+- Native Spring integration with messaging abstractions (simpMessagingTemplate)
+- STOMP topics/queues for order-room updates and driver streams
+- SockJS fallback support for older clients
+- Production-ready with interceptors, security, and session management
 
-### Infrastructure Technologies
+**Production posture:**
+- Sticky sessions or external session store; connection limits and keepalive tuning
+- Authenticated destinations; rate-limit fan-out; horizontal scale with shared message broker
 
-#### 1. Docker & Docker Compose
-**Rationale:**
-- **Consistency**: Identical environments across development/production
-- **Scalability**: Easy service scaling and load balancing
-- **Isolation**: Service isolation and resource management
-- **Portability**: Platform-independent deployment
+**Local simplicity:**
+- Single-node WebSocket endpoint; in-memory session registry
 
-#### 2. Nginx
-**Rationale:**
-- **Performance**: High-performance reverse proxy
-- **Load Balancing**: Multiple load balancing algorithms
-- **Rate Limiting**: Built-in DDoS protection
-- **SSL Termination**: Efficient HTTPS handling
+#### **Testing & Quality Tooling**
+**Production posture:**
+- JUnit 5, Testcontainers (Postgres/Redis/RabbitMQ), WireMock for external stubs
+- Static analysis: SpotBugs, Checkstyle; dependency scanning: OWASP Dependency-Check
+- Performance testing: Gatling/JMeter with CI gate on SLAs
 
-#### 3. Prometheus + Grafana
-**Rationale:**
-- **Metrics**: Comprehensive application and system metrics
-- **Alerting**: Real-time alerting on performance issues
-- **Visualization**: Rich dashboards for monitoring
-- **Integration**: Native Spring Boot integration
+**Local simplicity:**
+- Run tests with embedded or Testcontainers; simple `./mvnw test` or `./gradlew test`
 
-## Scalability Strategy
+---
 
-### Horizontal Scaling
+## Performance Targets and Optimization
 
-#### Application Layer
-- **Load Balancing**: Nginx distributes traffic across instances
-- **Stateless Design**: No server-side session state
-- **Database Connection Pooling**: Efficient connection management
-
-#### Data Layer
-- **Read Replicas**: Separate read/write database instances
-- **Cache Clustering**: Redis cluster for cache scaling
-- **Kafka Partitioning**: Topic partitioning for event scaling
-
-#### Location Processing
-- **Event Streaming**: Kafka handles high-frequency location updates
-- **Async Processing**: Non-blocking location processing
-- **Data Partitioning**: Time-based partitioning for location history
-
-### Vertical Scaling
-
-#### JVM Optimization
-- **G1 Garbage Collector**: Low-latency garbage collection
-- **Memory Tuning**: Optimized heap sizing
-- **Connection Pools**: Tuned for high concurrency
-
-#### Database Optimization
-- **Query Optimization**: Indexed queries and query plans
-- **Connection Pooling**: HikariCP for optimal connections
-- **Prepared Statements**: Reduced query parsing overhead
-
-## Resilience & Fault Tolerance
-
-### Application Resilience
-
-#### Circuit Breaker Pattern
-- **Payment Service**: Fallback for payment failures
-- **External APIs**: Graceful degradation for third-party services
-
-#### Retry Mechanisms
-- **Database Operations**: Automatic retry with backoff
-- **Kafka Publishing**: Retry failed message publishing
-- **External Services**: Configurable retry policies
-
-#### Graceful Degradation
-- **Cache Failures**: Fall back to database queries
-- **Payment Failures**: Queue orders for later processing
-- **Location Services**: Continue with last known positions
-
-### Data Resilience
-
-#### Database
-- **ACID Transactions**: Consistent order processing
-- **Backup Strategy**: Automated database backups
-- **Replication**: Master-slave replication for availability
-
-#### Event Streaming
-- **Message Persistence**: Kafka message durability
-- **Consumer Groups**: Automatic failover and load balancing
-- **Dead Letter Queues**: Handle failed message processing
-
-### Infrastructure Resilience
-
-#### Health Checks
-- **Application**: Spring Boot actuator health endpoints
-- **Database**: Connection pool health monitoring
-- **Dependencies**: Service dependency health checks
-
-#### Resource Management
-- **Memory Limits**: Container memory constraints
-- **CPU Limits**: Prevent resource starvation
-- **Connection Limits**: Database connection pool limits
-
-## Performance Characteristics
-
-### Target Performance Metrics
-
-| Metric | Target | Current Achievement |
-|--------|--------|-------------------|
-| Order Processing | 500 orders/min | ✅ 500+ orders/min |
-| Menu Response Time | P99 < 200ms | ✅ P95 < 150ms |
-| Location Updates | 2000 events/sec | ✅ 2000+ events/sec |
-| Database Connections | < 50 active | ✅ ~30 average |
-| Memory Usage | < 2GB heap | ✅ ~1.5GB average |
+### Target Metrics
+- **Order Processing**: 500 orders/minute (8.33/second) sustained load
+- **Menu Browsing**: P99 response time < 200ms
+- **Location Processing**: 2,000 GPS events/second with < 50ms latency
+- **Database Queries**: P95 < 100ms for all read operations
+- **Memory Usage**: < 2GB RAM for local demonstration
 
 ### Optimization Strategies
 
-#### Database Performance
-- **Index Optimization**: Covering indexes for common queries
-- **Query Optimization**: Explain plans and query tuning
-- **Connection Pooling**: HikariCP with optimized settings
-- **Batch Processing**: Bulk operations for efficiency
+#### **Database Optimization**
+```sql
+-- Order table indexes for performance
+CREATE INDEX idx_orders_status ON orders(status);
+CREATE INDEX idx_orders_created_at ON orders(created_at);
+CREATE INDEX idx_orders_restaurant_id ON orders(restaurant_id);
 
-#### Cache Performance
-- **Hit Rate Optimization**: >95% cache hit rate for menus
-- **TTL Tuning**: Balanced freshness vs. performance
-- **Memory Optimization**: Efficient serialization
-- **Eviction Policies**: LRU eviction for memory management
+-- Location table optimization
+CREATE INDEX idx_locations_driver_timestamp ON locations(driver_id, created_at);
+CREATE INDEX idx_locations_geospatial ON locations USING GIST(coordinates);
 
-#### Application Performance
-- **Async Processing**: Non-blocking operations where possible
-- **Thread Pool Tuning**: Optimized thread pools for workload
-- **JVM Tuning**: G1GC with pause time targets
-- **Profiling**: Continuous performance monitoring
+-- Restaurant menu caching strategy
+CREATE INDEX idx_menu_items_restaurant_available ON menu_items(restaurant_id, is_available);
+```
 
-## Security Considerations
+#### **Caching Strategy**
+- **Menu Data**: 15-minute TTL with proactive invalidation
+- **Restaurant Status**: 5-minute TTL with real-time updates
+- **User Sessions**: 24-hour TTL with sliding expiration
+- **Location Data**: 30-second TTL for customer tracking
 
-### Data Security
-- **Encryption at Rest**: Database encryption
-- **Encryption in Transit**: TLS for all communications
-- **API Security**: Input validation and sanitization
-- **SQL Injection Prevention**: Parameterized queries
+#### **Connection Pooling**
+```properties
+# HikariCP connection pool (application.properties)
+spring.datasource.url=jdbc:postgresql://postgres:5432/swifteats
+spring.datasource.username=admin
+spring.datasource.password=password
+spring.datasource.hikari.maximum-pool-size=20
+spring.datasource.hikari.minimum-idle=5
+spring.datasource.hikari.connection-timeout=2000
+spring.datasource.hikari.idle-timeout=30000
+```
 
-### Access Control
-- **Authentication**: JWT-based authentication (future)
-- **Authorization**: Role-based access control
-- **Rate Limiting**: DDoS protection
-- **API Versioning**: Backward compatibility
+#### **RabbitMQ Configuration**
+```java
+// Spring AMQP configuration (Java Config)
+@Bean
+public Queue gpsEventsQueue() {
+  return QueueBuilder.durable("gps-events")
+      .withArgument("x-max-length", 10000)
+      .withArgument("x-message-ttl", 60000)
+      .withArgument("x-dead-letter-exchange", "gps-events-dlx")
+      .build();
+}
 
-### Infrastructure Security
-- **Container Security**: Non-root containers
-- **Network Isolation**: Docker network segmentation
-- **Secret Management**: Environment-based secrets
-- **Health Check Security**: Protected health endpoints
+@Bean
+public SimpleRabbitListenerContainerFactory rabbitListenerContainerFactory(ConnectionFactory connectionFactory) {
+  SimpleRabbitListenerContainerFactory factory = new SimpleRabbitListenerContainerFactory();
+  factory.setConnectionFactory(connectionFactory);
+  factory.setPrefetchCount(100); // batch-like consumption
+  factory.setAcknowledgeMode(AcknowledgeMode.AUTO);
+  return factory;
+}
+```
 
-## Monitoring & Observability
+---
 
-### Application Metrics
-- **Business Metrics**: Order rates, success rates
-- **Performance Metrics**: Response times, throughput
+## Resilience and Failure Handling
+
+### Failure Scenarios and Mitigation
+
+#### **Database Connection Failure**
+**Detection**: Connection pool monitoring and health checks
+**Mitigation**:
+- Automatic connection retry with exponential backoff
+- Read-only mode using cached data for non-critical operations
+- Graceful degradation with user-friendly error messages
+
+```javascript
+// Database circuit breaker implementation
+const circuitBreaker = new CircuitBreaker(dbQuery, {
+  timeout: 3000,
+  errorThresholdPercentage: 50,
+  resetTimeout: 30000
+});
+```
+
+#### **Redis Cache Failure**
+**Detection**: Cache operation timeouts and error monitoring
+**Mitigation**:
+- Direct database fallback for cache misses
+- Cache reconstruction from database on recovery
+- Performance degradation alerts to operations team
+
+#### **RabbitMQ Queue Failure**
+**Detection**: Queue depth monitoring and message processing rates
+**Mitigation**:
+- In-memory buffer as temporary storage
+- Dead letter queues for failed message processing
+- Manual queue drain procedures for recovery
+
+#### **High Load Scenarios**
+**Detection**: Response time monitoring and throughput metrics
+**Mitigation**:
+- Request rate limiting with Redis counters
+- Horizontal pod autoscaling in production
+- Load shedding for non-critical operations
+
+### Health Check Implementation
+```properties
+# Spring Boot Actuator (application.properties)
+management.endpoints.web.exposure.include=health,metrics,info,env
+management.endpoint.health.show-details=always
+```
+
+```java
+// Custom Health Indicators
+@Component
+public class RabbitHealthIndicator implements HealthIndicator {
+  private final RabbitTemplate rabbitTemplate;
+  public RabbitHealthIndicator(RabbitTemplate rabbitTemplate) { this.rabbitTemplate = rabbitTemplate; }
+  @Override public Health health() {
+    try { rabbitTemplate.execute(channel -> { channel.isOpen(); return null; }); return Health.up().build(); }
+    catch (Exception e) { return Health.down(e).build(); }
+  }
+}
+```
+
+---
+
+## Local Validation and Testing
+
+---
+
+## Technology Recommendations by Component
+
+### Summary Choices (Java-first)
+- **API & Business Logic**: Java 17 + Spring Boot 3 (Spring Web, Spring Validation, Spring Security)
+- **Persistence**: PostgreSQL 14+ with PostGIS; Spring Data JPA/Hibernate; Flyway migrations
+- **Caching**: Redis 6+ (in-memory cache, sessions, rate-limiting)
+- **Messaging**: RabbitMQ 3.9+ (GPS buffering, async tasks, notifications)
+- **Real-time**: Spring WebSocket (STOMP/SockJS)
+- **Build/Packaging**: Gradle or Maven; Jib for container images
+- **Observability**: Spring Boot Actuator, Micrometer + Prometheus (optional), structured logs (Logback)
+
+### Component-by-Component Analysis
+
+1) API Gateway Layer (within monolith)
+- Technology: Spring Boot (Spring Web), Spring Security (JWT), Springdoc OpenAPI
+- Advantages:
+  - Tight integration with domain modules; minimal overhead
+  - Mature authN/authZ stack (filters, method security)
+  - Auto-generated API docs with OpenAPI
+  - Simple rate-limiting via Redis counters
+  
+- Disadvantages:
+  - Less flexibility than an external API gateway
+  - App-level rate limiting may contend for app resources
+ 
+ - Production posture:
+   - JWT with key rotation (JWKS), CORS/CSRF policies, WAF/CDN fronting
+   - Centralized auth via OIDC provider (Keycloak/Auth0) if needed
+ - Local simplicity:
+   - In-app JWT verification with static test keys; OpenAPI UI at /swagger-ui
+
+2) Order Module
+- Technology: Spring Boot, Spring Data JPA, PostgreSQL, Flyway
+- Advantages:
+  - Strong ACID guarantees for order lifecycle
+  - Rich JPA/Hibernate tooling and ecosystem
+  - Simple schema migration via Flyway
+  
+- Disadvantages:
+  - Requires careful query tuning to avoid N+1 issues
+  - Schema evolution needs strict discipline
+ 
+ - Production posture:
+   - Read/write separation where required; idempotent order creation endpoints
+ - Local simplicity:
+   - H2 disabled; always use local Postgres via Docker for parity
+
+3) Restaurant/Menu Module
+- Technology: Spring Boot, PostgreSQL + Redis cache
+- Advantages:
+  - Sub-200ms P99 with Redis cache-aside
+  - Indexing and partial denormalization possible in Postgres
+  
+- Disadvantages:
+  - Cache invalidation complexity on frequent menu updates
+ 
+ - Production posture:
+   - Cache keys namespaced; proactive invalidation on updates; metrics on hit ratio
+ - Local simplicity:
+   - Single Redis instance; default TTLs from properties
+
+4) Location Module
+- Technology: Spring Boot, RabbitMQ (Spring AMQP), PostgreSQL (PostGIS), Redis for hot location cache
+- Advantages:
+  - RabbitMQ is cost-efficient, reliable for 2k events/sec
+  - PostGIS enables fast geo-queries (nearest-driver, bounding boxes)
+  - Redis supports hot reads for live map updates
+  
+- Disadvantages:
+  - Backpressure needs tuning (prefetch, DLQ policies)
+  - Batch writes must be carefully sized to balance latency and throughput
+ 
+ - Production posture:
+   - Quorum queues; publisher confirms; consumer concurrency controls
+   - Partition drivers by shard key if needed; Postgres table partitioning by time
+ - Local simplicity:
+   - Single queue; simple consumer; batch size configurable via properties
+
+5) Notification Module
+- Technology: Spring WebSocket (STOMP), optional Redis pub/sub for fan-out
+- Advantages:
+  - Native integration; rooms via STOMP destinations
+  - Low-latency updates to customers and drivers
+  
+- Disadvantages:
+  - WebSocket scale requires connection lifecycle management
+ 
+ - Production posture:
+   - External session store; STOMP broker relay if needed; connection quotas
+ - Local simplicity:
+   - Simple in-memory STOMP broker; single instance
+
+6) User/Auth Module
+- Technology: Spring Security (JWT), Spring Data JPA
+- Advantages:
+  - Battle-tested auth; role-based access control
+  - Stateless JWTs simplify scaling
+  
+- Disadvantages:
+  - JWT revocation lists require Redis or short TTL
+ 
+ - Production posture:
+   - Password hashing (bcrypt/argon2), MFA optional, audit logs
+ - Local simplicity:
+   - Pre-seeded users; dev JWT secret; simple role matrix
+
+7) Caching & Rate Limiting
+- Technology: Redis (Spring Data Redis, Lettuce client)
+- Advantages:
+  - Microsecond ops; counters, hashes for structured cache
+  - Easy to implement leaky-bucket/token-bucket rate limiting
+  
+- Disadvantages:
+  - Requires HA if used for sessions; memory sizing needed
+ 
+ - Production posture:
+   - Separate instance/pool for session vs cache; eviction policies per keyspace
+ - Local simplicity:
+   - Single instance; default eviction; docker-compose volume optional
+
+8) Database
+- Technology: PostgreSQL + PostGIS
+- Advantages:
+  - ACID, strong consistency; rich indexing; geospatial
+  - Cost-effective; easy local and cloud deployment
+  
+- Disadvantages:
+  - Write scaling beyond a point needs sharding/partitioning strategy
+ 
+ - Production posture:
+   - Backups, PITR, HA; auto-vacuum tuned; partitioning for time-series tables
+ - Local simplicity:
+   - One container; Flyway auto-migrate on app start
+
+9) Messaging
+- Technology: RabbitMQ
+- Advantages:
+  - Simple ops; supports DLQ, retries, priorities
+  - Adequate throughput and latency for our needs
+  
+- Disadvantages:
+  - Not designed for massive streaming analytics (Kafka territory)
+ 
+ - Production posture:
+   - Quorum queues, mirrored policies, DLQ alarms; TLS connections
+ - Local simplicity:
+   - Single-node; management UI enabled for visibility
+
+10) Observability
+- Technology: Spring Actuator, Micrometer; Logback JSON logs
+- Advantages:
+  - Minimal setup; health, metrics, traces ready
+  
+- Disadvantages:
+  - Advanced tracing requires extra tooling (e.g., OpenTelemetry)
+ 
+ - Production posture:
+   - Prometheus/Grafana, OpenTelemetry exporters, log aggregation (ELK/Cloud)
+ - Local simplicity:
+   - Actuator exposure; simple logs to console/file; optional dockerized Prometheus
+
+---
+
+## Alternatives and Trade-offs
+
+- API/Framework: Spring Boot vs Node.js/Express
+  - Spring: +strong typing, mature ecosystem; -steeper learning for juniors
+  - Node: +fast prototyping; -less suitable for CPU-heavy tasks
+
+- Messaging: RabbitMQ vs Kafka
+  - RabbitMQ: +simple, cost-efficient, fits 2k eps; -less suited for big-data streams
+  - Kafka: +massive throughput, replay; -overkill/complex for current needs
+
+- Cache: Redis vs Memcached
+  - Redis: +richer data structures, pub/sub; -slightly heavier footprint
+  - Memcached: +simple; -limited feature set
+
+- DB: PostgreSQL vs MongoDB
+  - Postgres: +ACID, joins, geospatial; -schema changes need migrations
+  - Mongo: +flexible schema; -eventual consistency risks for orders/payments
+
+---
+
+## Technology Evaluation Matrix
+
+| Category | Option | Scalability | Resilience | Performance | Dev Productivity | Operability | Cost | Production Readiness | Local Simplicity | Notes |
+|---------|--------|------------:|-----------:|------------:|-----------------:|------------:|-----:|--------------------:|-----------------:|-------|
+| API/Framework | Spring Boot | 4 | 4 | 4 | 4 | 4 | 4 | 5 | 4 | Enterprise-grade, great integrations |
+| API/Framework | Node.js/Express | 4 | 3 | 4 | 5 | 4 | 4 | 4 | 5 | Fast to prototype; JS tooling |
+| Database | PostgreSQL + PostGIS | 4 | 4 | 4 | 4 | 4 | 4 | 5 | 4 | ACID + geospatial; proven |
+| Database | MongoDB | 3 | 3 | 3 | 4 | 4 | 4 | 3 | 4 | Flexible but eventual consistency |
+| Cache | Redis | 4 | 4 | 5 | 4 | 4 | 4 | 5 | 5 | Rich features; sub-ms |
+| Cache | Memcached | 3 | 3 | 4 | 4 | 4 | 4 | 3 | 5 | Simple cache only |
+| Messaging | RabbitMQ | 4 | 4 | 4 | 4 | 4 | 4 | 5 | 5 | DLQ, retries; fits 2k eps |
+| Messaging | Kafka | 5 | 4 | 5 | 3 | 3 | 3 | 5 | 2 | Overkill now; future option |
+| Realtime | Spring WebSocket | 4 | 4 | 4 | 4 | 4 | 4 | 4 | 5 | Native Spring, STOMP |
+| Observability | Spring Actuator+Micrometer | 4 | 4 | 4 | 5 | 4 | 4 | 5 | 5 | Minimal setup, extensible |
+
+Scoring legend: 1=Poor, 3=Good, 5=Excellent.
+
+### Development Environment Setup
+
+#### **System Requirements**
+- **RAM**: 2GB minimum, 4GB recommended
+- **CPU**: 2 cores minimum
+- **Storage**: 10GB for containers and data
+- **OS**: macOS, Linux, or Windows with Docker support
+
+#### **Docker Compose Configuration**
+```yaml
+version: '3.8'
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+      - DB_HOST=postgres
+      - REDIS_HOST=redis
+      - RABBITMQ_HOST=rabbitmq
+    depends_on:
+      - postgres
+      - redis
+      - rabbitmq
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  postgres:
+    image: postgis/postgis:13-3.1
+    environment:
+      POSTGRES_DB: swifteats
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:6.2-alpine
+    ports:
+      - "6379:6379"
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+
+  rabbitmq:
+    image: rabbitmq:3.9-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: admin
+      RABBITMQ_DEFAULT_PASS: password
+
+volumes:
+  postgres_data:
+```
+
+### Testing Strategy
+
+#### **Load Testing Configuration**
+```java
+// Java-based GPS event simulator sketch (pseudo-code)
+ExecutorService pool = Executors.newFixedThreadPool(8);
+int drivers = 50; int eps = 10; int durationSec = 300;
+for (int d = 0; d < drivers; d++) {
+  int driverId = d;
+  pool.submit(() -> {
+    long end = System.currentTimeMillis() + durationSec * 1000L;
+    while (System.currentTimeMillis() < end) {
+      for (int i = 0; i < eps; i++) {
+        GpsEvent e = GpsEvent.randomAround(18.5204, 73.8567, driverId);
+        restTemplate.postForEntity(baseUrl + "/location", e, Void.class);
+      }
+      Thread.sleep(1000);
+    }
+  });
+}
+```
+
+#### **Performance Validation**
+- **Menu Browsing**: 1000 concurrent requests with P99 timing
+- **Order Processing**: 500 orders in 60 seconds sustained test
+- **Location Processing**: 50 drivers × 10 events/second for 5 minutes
+- **Memory Profiling**: Continuous monitoring during load tests
+
+#### **Integration Test Suite**
+```java
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+class OrderFlowIT {
+  @Autowired TestRestTemplate rest;
+
+  @Test void endToEndOrderUnderLoad() {
+    List<OrderRequest> batch = IntStream.range(0, 100)
+      .mapToObj(i -> Fixtures.newOrder())
+      .toList();
+    long start = System.currentTimeMillis();
+    List<ResponseEntity<OrderResponse>> responses = batch.stream()
+      .map(req -> rest.postForEntity("/api/orders", req, OrderResponse.class))
+      .toList();
+    long avgMs = (System.currentTimeMillis() - start) / Math.max(1, responses.size());
+    assertTrue(responses.stream().allMatch(r -> r.getStatusCode().is2xxSuccessful()));
+    assertTrue(avgMs < 500);
+  }
+}
+```
+
+### Monitoring and Observability
+
+#### **Local Monitoring Dashboard**
+- **Application Metrics**: Request rates, response times, error rates
 - **System Metrics**: CPU, memory, disk usage
-- **Error Metrics**: Error rates and types
+- **Database Metrics**: Query performance, connection pool status
+- **Queue Metrics**: Message rates, queue depths, processing times
 
-### Logging Strategy
-- **Structured Logging**: JSON format for parsing
-- **Log Levels**: Appropriate log levels for environments
-- **Request Tracing**: Correlation IDs for request tracking
-- **Performance Logging**: Slow query and operation logging
+#### **Logging Configuration**
+```javascript
+const winston = require('winston');
 
-### Alerting
-- **Performance Alerts**: Response time thresholds
-- **Error Rate Alerts**: High error rate notifications
-- **Resource Alerts**: Memory and CPU threshold alerts
-- **Business Alerts**: Order processing rate alerts
+const logger = winston.createLogger({
+  level: 'info',
+  format: winston.format.combine(
+    winston.format.timestamp(),
+    winston.format.errors({ stack: true }),
+    winston.format.json()
+  ),
+  transports: [
+    new winston.transports.Console(),
+    new winston.transports.File({ filename: 'logs/app.log' })
+  ]
+});
+```
 
-## Future Enhancements
+This architecture provides a solid foundation for SwiftEats' immediate needs while maintaining clear evolution paths for future growth, ensuring cost-effective operation without compromising on reliability or performance requirements.
 
-### Microservice Migration
-1. **Extract Order Service**: Independent order processing
-2. **Extract Location Service**: Dedicated GPS tracking service
-3. **Extract Payment Service**: Separate payment processing
-4. **API Gateway**: Central API management and routing
+---
 
-### Performance Improvements
-1. **Database Sharding**: Horizontal database partitioning
-2. **CDN Integration**: Global content delivery
-3. **Machine Learning**: Intelligent driver assignment
-4. **Predictive Caching**: ML-based cache warming
+## Detailed System Design
 
-### Feature Enhancements
-1. **Real-time Analytics**: Live business dashboards
-2. **Advanced Routing**: Optimized delivery routes
-3. **Push Notifications**: Real-time customer notifications
-4. **A/B Testing**: Feature flag management
+### 1) Domain Model
 
-This architecture provides a solid foundation for SwiftEats while maintaining flexibility for future growth and evolution.
+Core entities with key attributes and constraints. All tables have `created_at`, `updated_at`, and optimistic lock `version`.
+
+- `users`
+  - id (UUID, PK), email (uniq), phone (uniq), password_hash, role (CUSTOMER|DRIVER|RESTAURANT|ADMIN), status
+  - Indexes: email, phone, role
+
+- `restaurants`
+  - id (UUID, PK), name, status (OPEN|CLOSED|BUSY), address, city, geo (PostGIS POINT), hours_json
+  - Indexes: status, city, geo (GIST)
+
+- `menu_items`
+  - id (UUID, PK), restaurant_id (FK), name, description, price, is_available, prep_time_seconds
+  - Indexes: restaurant_id, (restaurant_id, is_available)
+
+- `orders`
+  - id (UUID, PK), customer_id (FK users), restaurant_id (FK), driver_id (nullable FK users), status (PLACED|CONFIRMED|PREPARING|READY|PICKED_UP|DELIVERED|CANCELLED), total_amount, payment_status (PENDING|SUCCESS|FAILED), eta_seconds
+  - Indexes: customer_id, restaurant_id, driver_id, status, created_at
+
+- `order_items`
+  - id (UUID, PK), order_id (FK orders), menu_item_id (FK), quantity, unit_price
+  - Indexes: order_id
+
+- `driver_locations`
+  - id (bigserial PK), driver_id (FK users), coordinates (PostGIS POINT), accuracy_m, recorded_at (timestamptz)
+  - Indexes: (driver_id, recorded_at), coordinates GIST
+
+- `payments_mock`
+  - id (UUID PK), order_id (FK), status (SUCCESS|FAILED), gateway_ref, processed_at
+  - Indexes: order_id, status
+
+Relationships and rules:
+- `orders.customer_id` required; `orders.driver_id` set on assignment
+- `menu_items.restaurant_id` required; cascade delete disabled (protect historical orders)
+- Soft delete avoided; use status flags for availability
+
+### 2) API Surface (High Level)
+
+Notation: `METHOD /path` – purpose (Auth: role)
+
+- Orders
+  - `POST /api/orders` – create order (Auth: CUSTOMER; idempotent key header `Idempotency-Key`)
+  - `GET /api/orders/{orderId}` – fetch order status (Auth: CUSTOMER/RESTAURANT/DRIVER by ownership)
+  - `PATCH /api/orders/{orderId}/status` – update status (Auth: RESTAURANT/DRIVER)
+
+- Payments (Mock)
+  - `POST /api/payments/{orderId}` – simulate payment (Auth: CUSTOMER)
+
+- Restaurants & Menu
+  - `GET /api/restaurants` – list/search restaurants (Auth: ANY)
+  - `GET /api/restaurants/{id}/menu` – fetch menu with status (Auth: ANY)
+  - `POST /api/restaurants/{id}/menu` – manage menu items (Auth: RESTAURANT)
+  - `PATCH /api/restaurants/{id}/status` – update open/busy/closed (Auth: RESTAURANT)
+
+- Drivers & Location
+  - `POST /api/drivers/{driverId}/location` – post GPS point (Auth: DRIVER)
+  - `GET /api/orders/{orderId}/track` – SSE/WebSocket subscription endpoint (Auth: CUSTOMER)
+
+- Users/Auth
+  - `POST /api/auth/login` – login (JWT)
+  - `POST /api/auth/register` – register
+
+Validation: Bean Validation annotations; consistent error format `{ code, message, details[] }`.
+
+### 3) Messaging Topology (RabbitMQ)
+
+- Exchanges
+  - `gps.events` (direct): routing key `driver.{driverId}`; bound to `gps.events.q`
+  - `notify.events` (topic): order events `order.*` to notify queue
+
+- Queues
+  - `gps.events.q` (durable, quorum)
+    - DLX: `gps.events.dlx`, DLQ: `gps.events.dlq`
+    - Args: `x-max-length=10000`, `x-message-ttl=60000`
+  - `notify.events.q` (durable)
+
+- Consumers
+  - `GpsIngestor` (concurrency N, prefetch 100) – validate and batch insert to Postgres
+  - `Notifier` – fan-out to WebSocket topics (e.g., `/topic/order.{orderId}`)
+
+Retry policy: immediate requeue 2x, then to DLQ; dead-letter processor with alerting.
+
+### 4) Caching Strategy (Redis)
+
+- Keys
+  - `menu:{restaurantId}` – JSON menu (TTL 900s)
+  - `rest:status:{restaurantId}` – OPEN/CLOSED/BUSY (TTL 300s)
+  - `track:driver:{driverId}` – latest GPS (TTL 60s)
+  - `session:{userId}` – session data (TTL 24h)
+  - `rate:{userId}:{endpoint}` – sliding window counters
+
+- Patterns
+  - Cache-aside for menu and restaurant status
+  - Proactive invalidation on management updates
+  - Read-through for tracking with TTL refresh on update
+
+### 5) Security & Governance
+
+- AuthN/AuthZ: Spring Security with JWT (RS256), roles: CUSTOMER, DRIVER, RESTAURANT, ADMIN
+- Idempotency: `Idempotency-Key` header for `POST /orders` stored in Redis for 24h
+- Rate limiting: token bucket per user/IP in Redis (sane defaults, e.g., 100 req/min)
+- Input validation: Bean Validation + centralized exception handler
+- Secrets: environment variables locally; managed secrets in production
+- PII: encryption at rest (DB-level), TLS in transit, minimal logging of PII
+
+### 6) Transaction & Consistency Model
+
+- Orders: single-transaction create (order + items), payment mock update transactional
+- Status updates: transactional with append-only audit table `order_events`
+- Location writes: eventually consistent via queue; reads prefer Redis hot location then DB
+
+### 7) Performance Budgets
+
+- Menu GET P99 < 200ms: 90ms DB (cache miss) + 20ms network + 30ms app + headroom; cache hit < 50ms
+- Orders: create < 500ms at 500/min sustained; DB writes amortized, indexes kept small
+- GPS ingest: 2,000 eps target; per-node consumer ~500 eps with prefetch 100; scale consumers to 4
+
+### 8) Capacity Planning (Initial)
+
+- App: 2 instances (2 vCPU, 2–4GB RAM) behind LB
+- Postgres: 2 vCPU, 4–8GB RAM; 1 read replica optional; storage with provisioned IOPS
+- Redis: 1 vCPU, 1–2GB RAM; persistence optional
+- RabbitMQ: 1–2 vCPU, 2GB RAM; quorum queues if clustered later
+
+### 9) Observability
+
+- Metrics (Micrometer):
+  - http.server.requests (P50/P95/P99), order.create.timer, gps.ingest.rate, cache.hit/miss, db.pool.{inUse, idle}
+- Logs: JSON with correlationId, userId, orderId; error stack traces
+- Health: Actuator health groups for db, redis, rabbit; readiness/liveness endpoints
+- Alerts (prod): SLA breach on menu P99>200ms, gps lag, queue depth, DB errors, error rate > 2%
+
+### 10) Testing & CI/CD Gates
+
+- Unit: JUnit5 + Mockito; coverage target ≥ 80%
+- Integration: Testcontainers (Postgres/Redis/RabbitMQ); happy-path and failure paths
+- Contract/API: Spring MVC tests + OpenAPI validation
+- Performance: Gatling/JMeter scenarios for menu, orders, GPS ingest
+- Security: Static analysis (SpotBugs), dependency scan (OWASP), secrets scan
+- CI gates: lint/static analysis pass; unit+integration tests green; performance smoke within SLOs
+
+### 11) Data Migration & Lifecycle
+
+- Migrations via Flyway; semantic versioning of DB changes
+- Archival policies for `driver_locations` (time-partitioned tables; retention 90 days)
+- Backups: daily full + WAL for PITR; restore testing quarterly
+
+### 12) Failure Scenarios (Concrete)
+
+- Postgres degraded IO: switch to cached reads for menus; reduce write batch size; alert DBA
+- Redis unavailable: degrade to DB reads; disable rate limiting temporarily; notify ops
+- RabbitMQ backlog: increase consumers; apply backpressure (429) on GPS endpoint; purge DLQ after inspection
+- App instance crash: LB routes to healthy instance; in-flight messages re-delivered
+
+### 13) Deployment Profiles
+
+- Local: docker-compose single-node deps; `spring.profiles.active=local`; seeded data
+- Staging: production-like with smaller quotas; synthetic load jobs
+- Production: managed services, HA where required; blue/green rollout with health checks
