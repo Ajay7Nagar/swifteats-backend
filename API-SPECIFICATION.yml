@@ -15,6 +15,11 @@ tags:
     description: Restaurant browse and menu retrieval
   - name: drivers
     description: Driver session and location updates
+  - name: auth
+    description: User registration and authentication
+
+security:
+  - bearer-jwt: []
 
 paths:
   /orders:
@@ -45,6 +50,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/OrderCreateResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '400':
           description: Validation error
           content:
@@ -65,6 +76,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Order'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '404':
           description: Order not found
           content:
@@ -100,6 +117,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Order'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '404':
           description: Order not found
           content:
@@ -117,6 +140,7 @@ paths:
     get:
       tags: [catalog]
       summary: List restaurants
+      security: []
       parameters:
         - in: query
           name: city
@@ -164,6 +188,7 @@ paths:
     get:
       tags: [catalog]
       summary: Get menu for a restaurant
+      security: []
       parameters:
         - $ref: '#/components/parameters/RestaurantId'
       responses:
@@ -196,7 +221,7 @@ paths:
       tags: [drivers]
       summary: Set driver online/offline status
       security:
-        - bearerAuth: []
+        - bearer-jwt: []
       parameters:
         - $ref: '#/components/parameters/DriverId'
       requestBody:
@@ -239,7 +264,7 @@ paths:
       tags: [drivers]
       summary: Ingest driver location update
       security:
-        - bearerAuth: []
+        - bearer-jwt: []
       parameters:
         - $ref: '#/components/parameters/DriverId'
       requestBody:
@@ -291,6 +316,55 @@ paths:
       summary: Get latest driver location for an order
       parameters:
         - $ref: '#/components/parameters/OrderId'
+  /auth/register:
+    post:
+      tags: [auth]
+      summary: Register a new user
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: User created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegisterResponse'
+        '400':
+          description: Invalid input or email exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/login:
+    post:
+      tags: [auth]
+      summary: Login and obtain JWT token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: JWT issued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
       responses:
         '200':
           description: Latest location for order in a dispatchable state
@@ -309,10 +383,13 @@ paths:
 
 components:
   securitySchemes:
-    bearerAuth:
+    bearer-jwt:
       type: http
       scheme: bearer
       bearerFormat: JWT
+    basic:
+      type: http
+      scheme: basic
 
   parameters:
     OrderId:
@@ -636,6 +713,56 @@ components:
           type: string
           format: date-time
       required: [driverId, lat, lng, timestamp]
+
+    RegisterRequest:
+      type: object
+      properties:
+        firstName:
+          type: string
+        lastName:
+          type: string
+        mobile:
+          type: string
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+      required: [firstName, lastName, mobile, email, password]
+
+    RegisterResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        firstName:
+          type: string
+        lastName:
+          type: string
+        email:
+          type: string
+          format: email
+      required: [id, firstName, lastName, email]
+
+    LoginRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+      required: [email, password]
+
+    LoginResponse:
+      type: object
+      properties:
+        token:
+          type: string
+      required: [token]
 
 
 
